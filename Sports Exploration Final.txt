@@ -1,0 +1,691 @@
+# NFL Offensive Strategy Analysis
+# Research Question:
+# How does offensive strategy change when NFL teams are winning vs. losing?
+
+# More specifically:
+# When a team is trailing by 7+ points,
+# how does its play selection change compared
+# with when it is leading or tied?
+
+# Data: NFL play-by-play data
+# Seasons analyzed: 2021–2024
+
+# -------------------------
+# 1. Load Packages
+# -------------------------
+
+#Install package
+install.packages("nflreadr")
+library(nflreadr)
+
+#load the actual data
+library(nflreadr)
+pbp <- load_pbp(2024)
+
+#Insights
+#49,492 observations of 372 variables
+#49,492 individual play-by-play records from the 2024 NFL season
+
+# -------------------------
+# 2. Load 2024 Data
+# -------------------------
+
+#Look at data
+pbp <- load_pbp(2024)
+
+#Explore the data
+dim(pbp)
+
+#Insights
+[1] 49492   372
+
+#That means: 49,492 rows × 372 columns
+
+#This gave us the names of the 372 variables
+names(pbp)
+
+#Shows the first few plays in dataset
+head(pbp)
+
+#Step 1: Find the score-related variables
+
+#Find variables related to scoring and game situation
+grep("score|lead|differential", names(pbp), value = TRUE)
+
+#Insights:
+
+#variable that tells us whether the offense is leading, tied, or trailing
+[1] "total_home_score"        "total_away_score"       
+[3] "posteam_score"           "defteam_score"          
+[5] "score_differential"      "posteam_score_post"     
+[7] "defteam_score_post"      "score_differential_post"
+[9] "no_score_prob"           "drive_ended_with_score" 
+[11] "away_score"              "home_score"   
+
+#Step 2: Find the play variables
+
+# Find variables related to play type
+grep("play_type|posteam|qtr|game_seconds|yards_gained|epa", names(pbp), value = TRUE)
+
+#help us identify the exact columns for:
+#Run vs. pass
+#Offensive team
+#Quarter
+#Time remaining
+#Yards gained
+#EPA
+ 
+[1] "posteam"                    "posteam_type"              
+[3] "game_seconds_remaining"     "qtr"                       
+[5] "play_type"                  "yards_gained"              
+[7] "posteam_timeouts_remaining" "posteam_score"             
+[9] "posteam_score_post"         "epa"                       
+[11] "total_home_epa"             "total_away_epa"            
+[13] "total_home_rush_epa"        "total_away_rush_epa"       
+[15] "total_home_pass_epa"        "total_away_pass_epa"       
+[17] "air_epa"                    "yac_epa"                   
+[19] "comp_air_epa"               "comp_yac_epa"              
+[21] "total_home_comp_air_epa"    "total_away_comp_air_epa"   
+[23] "total_home_comp_yac_epa"    "total_away_comp_yac_epa"   
+[25] "total_home_raw_air_epa"     "total_away_raw_air_epa"    
+[27] "total_home_raw_yac_epa"     "total_away_raw_yac_epa"    
+[29] "play_type_nfl"              "st_play_type"              
+[31] "qb_epa"                     "xyac_epa" 
+
+#Main ingredients for our question:
+How does offensive strategy change when NFL teams are winning vs. losing?
+
+#Find the score differential 
+grep("differential|defteam_score|score", names(pbp), value = TRUE)  
+
+[1] "total_home_score"        "total_away_score"       
+[3] "posteam_score"           "defteam_score"          
+[5] "score_differential"      "posteam_score_post"     
+[7] "defteam_score_post"      "score_differential_post"
+[9] "no_score_prob"           "drive_ended_with_score" 
+[11] "away_score"              "home_score"    
+
+#Look at the actual play types
+
+#Look at the different play types
+table(pbp$play_type, useNA = "ifany")
+
+extra_point  field_goal     kickoff     no_play        pass        punt 
+1308        1166        2955        4936       20007        2119 
+qb_kneel    qb_spike         run        <NA> 
+  437          75       15043        1446 
+
+#Show us how many plays are classified as:
+#pass
+#run
+#punt
+#field goal
+#kickoff
+
+#Use this to decide exactly which plays count as offensive run/pass plays
+
+#Look at the range of score differentials
+summary(pbp$score_differential)
+
+Min. 1st Qu.  Median    Mean 3rd Qu.    Max.    NA's 
+ -46.00   -7.00    0.00   -1.27    4.00   46.00    2713 
+
+#Step 3: Create analysis dataset
+#Keep only run and pass plays
+offensive_plays <- pbp[
+  pbp$play_type %in% c("run", "pass"),
+]
+
+#Check the new dataset
+dim(offensive_plays)
+
+[1] 35050   372
+
+#Step 4: Create Game Situation Categories
+#Turning numerical score_differential into categories easier to analyze
+#Going to create:
+#Leading
+#Tied
+#Trailing
+#Trailing by 7+
+#Trailing by 14+
+
+#Step 4: Create game situation categories
+
+offensive_plays$situation <- ifelse(
+  offensive_plays$score_differential >= 1,
+  "Leading",
+  ifelse(
+    offensive_plays$score_differential == 0,
+    "Tied",
+    ifelse(
+      offensive_plays$score_differential <= -14,
+      "Trailing by 14+",
+      ifelse(
+        offensive_plays$score_differential <= -7,
+        "Trailing by 7+",
+        "Trailing"
+      )
+    )
+  )
+)
+
+#Count the number of plays in each game situation
+table(offensive_plays$situation, useNA = "ifany")
+
+ Leading            Tied        Trailing Trailing by 14+ 
+          11885            6285            6555            4024 
+ Trailing by 7+ 
+           6301 
+
+#this gives us 35,050 total run/pass plays
+
+#Step 5: Calculate Run/Pass Rates
+
+#Count run and pass plays within each situation
+play_counts <- table(
+  offensive_plays$situation,
+  offensive_plays$play_type
+)
+
+#Convert counts into percentages within each situation
+play_percentages <- prop.table(
+  play_counts,
+  margin = 1
+) * 100
+
+#Round percentages to 2 decimal places
+round(play_percentages, 2)
+
+               pass   run
+  Leading         50.09 49.91
+  Tied            54.81 45.19
+  Trailing        58.20 41.80
+  Trailing by 14+ 70.13 29.87
+  Trailing by 7+  63.04 36.96
+  
+#Step 6: Create a Results Table
+
+results <- as.data.frame(play_percentages)
+
+#Rename the columns
+names(results) <- c(
+  "Situation",
+  "Play_Type",
+  "Percentage"
+)
+
+#Round percentages
+results$Percentage <- round(results$Percentage, 2)
+
+#View the results
+results
+
+   Situation Play_Type Percentage
+1          Leading      pass      50.09
+2             Tied      pass      54.81
+3         Trailing      pass      58.20
+4  Trailing by 14+      pass      70.13
+5   Trailing by 7+      pass      63.04
+6          Leading       run      49.91
+7             Tied       run      45.19
+8         Trailing       run      41.80
+9  Trailing by 14+       run      29.87
+10  Trailing by 7+       run      36.96
+
+#Cleaner table that we can use for chart
+
+#Put game situations in logical order
+results$Situation <- factor(
+  results$Situation,
+  levels = c(
+    "Leading",
+    "Tied",
+    "Trailing",
+    "Trailing by 7+",
+    "Trailing by 14+"
+  )
+)
+
+#View the organized results
+results
+
+   Situation Play_Type Percentage
+1          Leading      pass      50.09
+2             Tied      pass      54.81
+3         Trailing      pass      58.20
+4  Trailing by 14+      pass      70.13
+5   Trailing by 7+      pass      63.04
+6          Leading       run      49.91
+7             Tied       run      45.19
+8         Trailing       run      41.80
+9  Trailing by 14+       run      29.87
+10  Trailing by 7+       run      36.96
+
+#Step 7: Create the Run/Pass Chart
+
+#Create visualization
+
+install.packages("ggplot2")
+library(ggplot2)
+
+ggplot(
+  results,
+  aes(
+    x = Situation,
+    y = Percentage,
+    fill = Play_Type
+  )
+) +
+  geom_col(position = "dodge") +
+  labs(
+    title = "NFL Offensive Play Selection by Game Situation",
+    x = "Game Situation",
+    y = "Percentage of Offensive Plays",
+    fill = "Play Type"
+  ) +
+  theme_minimal()
+
+main charts for your project 
+
+#Step 8: Calculate offensive efficiency
+
+efficiency <- aggregate(
+  cbind(yards_gained, epa) ~ situation + play_type,
+  data = offensive_plays,
+  FUN = mean,
+  na.rm = TRUE
+)
+
+#View efficiency results
+
+efficiency
+
+   situation play_type yards_gained          epa
+1          Leading      pass     6.617336  0.087428020
+2             Tied      pass     6.297533  0.041315271
+3         Trailing      pass     6.137353  0.026196430
+4  Trailing by 14+      pass     5.285259 -0.121705257
+5   Trailing by 7+      pass     6.178499  0.019952688
+6          Leading       run     4.619016 -0.023889795
+7             Tied       run     4.616549 -0.020115621
+8         Trailing       run     4.538686  0.003560603
+9  Trailing by 14+       run     4.457571 -0.006583075
+10  Trailing by 7+       run     4.693001  0.025843638
+
+#Step 9:  Round efficiency results
+
+efficiency$yards_gained <- round(
+  efficiency$yards_gained,
+  2
+)
+
+efficiency$epa <- round(
+  efficiency$epa,
+  3
+)
+
+#View cleaned efficiency table
+efficiency
+
+       situation play_type yards_gained    epa
+1          Leading      pass         6.62  0.087
+2             Tied      pass         6.30  0.041
+3         Trailing      pass         6.14  0.026
+4  Trailing by 14+      pass         5.29 -0.122
+5   Trailing by 7+      pass         6.18  0.020
+6          Leading       run         4.62 -0.024
+7             Tied       run         4.62 -0.020
+8         Trailing       run         4.54  0.004
+9  Trailing by 14+       run         4.46 -0.007
+10  Trailing by 7+       run         4.69  0.026
+
+#Teams pass more as the deficit increases.
+#When teams are down 14+
+   #their passing efficiency drops considerably 
+   #from 0.087 EPA when leading to -0.122 EPA when trailing by 14+
+
+#Step 10: Create the Efficiency Chart
+#Visualize average yards gained
+
+ggplot(
+  efficiency,
+  aes(
+    x = situation,
+    y = yards_gained,
+    fill = play_type
+  )
+) +
+  geom_col(position = "dodge") +
+  labs(
+    title = "Average Yards Gained by Game Situation",
+    x = "Game Situation",
+    y = "Average Yards Gained",
+    fill = "Play Type"
+  ) +
+  theme_minimal()
+
+#Put game situations in the correct order
+efficiency$situation <- factor(
+  efficiency$situation,
+  levels = c(
+    "Leading",
+    "Tied",
+    "Trailing",
+    "Trailing by 7+",
+    "Trailing by 14+"
+  )
+)
+
+ggplot(
+  efficiency,
+  aes(
+    x = situation,
+    y = yards_gained,
+    fill = play_type
+  )
+) +
+  geom_col(position = "dodge") +
+  labs(
+    title = "Average Yards Gained by Game Situation",
+    x = "Game Situation",
+    y = "Average Yards Gained",
+    fill = "Play Type"
+  ) +
+  theme_minimal()
+  
+#Step 11: Does Strategy Change During the Game?
+
+#Question: When a team is trailing by 7+ points, does its run/pass strategy change as the game progresses?
+#11A : Create quarter groups
+
+offensive_plays$quarter_group <- ifelse(
+  offensive_plays$qtr == 1,
+  "Q1",
+  ifelse(
+    offensive_plays$qtr == 2,
+    "Q2",
+    ifelse(
+      offensive_plays$qtr == 3,
+      "Q3",
+      ifelse(
+        offensive_plays$qtr == 4,
+        "Q4",
+        "Other"
+      )
+    )
+  )
+)
+
+#Check quarter groups
+table(offensive_plays$quarter_group)
+
+Other    Q1    Q2    Q3    Q4 
+  174  7816  9445  8030  9585 
+  
+#Step 12 : Focus on teams trailing by 7+  
+#Question: When teams are trailing by 7+ points, how does their run/pass selection change throughout the game?
+
+#Analyze teams trailing by 7+
+
+trailing_7 <- offensive_plays[
+  offensive_plays$situation == "Trailing by 7+",
+]
+
+#Count run and pass plays by quarter
+
+table(
+  trailing_7$quarter_group,
+  trailing_7$play_type
+)
+
+ pass  run
+  Q1  664  570
+  Q2 1168  754
+  Q3  828  627
+  Q4 1312  378
+  
+Step 13: Calculate Run/Pass Percentages by Quarter   
+
+trailing_7_percentages <- prop.table(
+  table(
+    trailing_7$quarter_group,
+    trailing_7$play_type
+  ),
+  margin = 1
+) * 100
+
+round(trailing_7_percentages, 2)
+
+    pass   run
+  Q1 53.81 46.19
+  Q2 60.77 39.23
+  Q3 56.91 43.09
+  Q4 77.63 22.37
+  
+#Step 14:  Create the Timing Chart
+
+#Create timing results table
+timing_results <- as.data.frame(
+  trailing_7_percentages
+)
+
+names(timing_results) <- c(
+  "Quarter",
+  "Play_Type",
+  "Percentage"
+)
+
+timing_results$Percentage <- round(
+  timing_results$Percentage,
+  2
+)
+
+#View timing results
+timing_results
+
+  Quarter Play_Type Percentage
+1      Q1      pass      53.81
+2      Q2      pass      60.77
+3      Q3      pass      56.91
+4      Q4      pass      77.63
+5      Q1       run      46.19
+6      Q2       run      39.23
+7      Q3       run      43.09
+8      Q4       run      22.37
+
+#Put quarters in the correct order
+
+timing_results$Quarter <- factor(
+  timing_results$Quarter,
+  levels = c("Q1", "Q2", "Q3", "Q4")
+)
+
+#Create timing chart
+ggplot(
+  timing_results,
+  aes(
+    x = Quarter,
+    y = Percentage,
+    fill = Play_Type
+  )
+) +
+  geom_col(position = "dodge") +
+  labs(
+    title = "Offensive Play Selection When Trailing by 7+",
+    x = "Quarter",
+    y = "Percentage of Offensive Plays",
+    fill = "Play Type"
+  ) +
+  theme_minimal()
+
+#Step 15: Multiple-Season Analysis
+#Does the pattern we found in 2024 also appear in other NFL seasons?
+
+#15A: Load multiple NFL seasons
+pbp_2021 <- load_pbp(2021)
+pbp_2022 <- load_pbp(2022)
+pbp_2023 <- load_pbp(2023)
+pbp_2024 <- load_pbp(2024)
+
+#15B: Create a function for seasonal analysis
+analyze_season <- function(data, year) {
+  #Keep only run and pass plays
+  offensive <- data[
+    data$play_type %in% c("run", "pass") &
+    !is.na(data$score_differential),
+  ]
+  
+#Create game situation 
+  offensive$situation <- ifelse(
+    offensive$score_differential >= 1,
+    "Leading",
+    ifelse(
+      offensive$score_differential == 0,
+      "Tied",
+      ifelse(
+        offensive$score_differential <= -14,
+        "Trailing by 14+",
+        ifelse(
+          offensive$score_differential <= -7,
+          "Trailing by 7+",
+          "Trailing"
+        )
+      )
+    )
+  )
+  
+#Calculate play percentages
+
+ percentages <- prop.table(
+    table(
+      offensive$situation,
+      offensive$play_type
+    ),
+    margin = 1
+  ) * 100
+
+#Return the trailing-by-7+ passing percentage  
+ 
+ result <- percentages["Trailing by 7+", "pass"]
+  
+  data.frame(
+    Season = year,
+    Trailing_7_Pass_Percentage = round(result, 2)
+  )
+}
+
+#15C: Run the analysis for all four seasons
+#15C: Analyze each season
+
+season_results <- rbind(
+  analyze_season(pbp_2021, 2021),
+  analyze_season(pbp_2022, 2022),
+  analyze_season(pbp_2023, 2023),
+  analyze_season(pbp_2024, 2024)
+)
+
+#View results
+season_results
+
+ Season Trailing_7_Pass_Percentage
+1   2021                      63.69
+2   2022                      62.97
+3   2023                      63.09
+4   2024                      63.04
+
+#Step 16: Final Results Table
+#Create final results table
+
+final_results <- data.frame(
+  Situation = c(
+    "Leading",
+    "Tied",
+    "Trailing",
+    "Trailing by 7+",
+    "Trailing by 14+"
+  ),
+  Pass_Percentage = c(
+    play_percentages["Leading", "pass"],
+    play_percentages["Tied", "pass"],
+    play_percentages["Trailing", "pass"],
+    play_percentages["Trailing by 7+", "pass"],
+    play_percentages["Trailing by 14+", "pass"]
+  ),
+  Run_Percentage = c(
+    play_percentages["Leading", "run"],
+    play_percentages["Tied", "run"],
+    play_percentages["Trailing", "run"],
+    play_percentages["Trailing by 7+", "run"],
+    play_percentages["Trailing by 14+", "run"]
+  )
+)
+
+#Round percentages
+final_results$Pass_Percentage <- round(
+  final_results$Pass_Percentage,
+  2
+)
+
+final_results$Run_Percentage <- round(
+  final_results$Run_Percentage,
+  2
+)
+
+#View final results
+final_results
+
+ Situation Pass_Percentage
+1         Leading           50.09
+2            Tied           54.81
+3        Trailing           58.20
+4  Trailing by 7+           63.04
+5 Trailing by 14+           70.13
+  Run_Percentage
+1          49.91
+2          45.19
+3          41.80
+4          36.96
+5          29.87
+
+#Step 16B: View multiple-season results
+season_results
+
+ Season Trailing_7_Pass_Percentage
+1   2021                      63.69
+2   2022                      62.97
+3   2023                      63.09
+4   2024                      63.04
+
+#Step 17: Calculate Key Changes
+#Calculate change in passing from leading to trailing by 14+
+
+pass_change <- 
+  final_results$Pass_Percentage[
+    final_results$Situation == "Trailing by 14+"
+  ] -
+  final_results$Pass_Percentage[
+    final_results$Situation == "Leading"
+  ]
+
+pass_change 
+
+[1] 20.04
+
+#Calculate Q1 to Q4 passing increase when trailing by 7+
+
+q1_pass <- timing_results$Percentage[
+  timing_results$Quarter == "Q1" &
+  timing_results$Play_Type == "pass"
+]
+
+q4_pass <- timing_results$Percentage[
+  timing_results$Quarter == "Q4" &
+  timing_results$Play_Type == "pass"
+]
+
+q4_increase <- q4_pass - q1_pass
+
+q4_increase
+
+[1] 23.82
